@@ -15,7 +15,11 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "nuxt": "^3.21.11"
+    "@supabase/ssr": "^0.12.6",
+    "@supabase/supabase-js": "^2.115.0",
+    "h3": "^1.15.11",
+    "nuxt": "^3.21.11",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.17.0",
