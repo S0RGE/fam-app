@@ -33,6 +33,20 @@ const map = (r: any): Episode => ({
 })
 export class SupabaseEpisodeRepository implements EpisodeRepository {
   constructor(private readonly client: any) {}
+  /**
+   * Resolves the authenticated account (claims.sub) of the request-scoped
+   * Supabase client for the auto timeline events (M002 D1/D2). The routes
+   * pass the author explicitly; this fallback keeps the repository
+   * self-sufficient when a direct call omits it. If neither is available,
+   * null is passed and the database NOT NULL constraint rejects the event
+   * (fail-closed — an auto event never becomes anonymous).
+   */
+  private async currentAuthor(): Promise<string | null> {
+    if (typeof this.client?.auth?.getUser !== 'function') return null
+    const { data, error } = await this.client.auth.getUser()
+    if (error || typeof data?.user?.id !== 'string') return null
+    return data.user.id
+  }
   private base(familyId: string, personId: string) {
     return this.client
       .from('episodes')
@@ -53,7 +67,14 @@ export class SupabaseEpisodeRepository implements EpisodeRepository {
     return { episodes: (data || []).map(map), total: count || 0 }
   }
   async create(familyId: string, personId: string, input: any) {
-    const { data, error } = await this.client.rpc('upsert_episode', {
+    // M002 D2: creation goes through the atomic create_episode compound
+    // function, which also inserts the episode_start timeline event. The
+    // p_episode payload keeps the 0002 upsert_episode shape.
+    const authorId =
+      typeof input.authorId === 'string' && input.authorId
+        ? input.authorId
+        : await this.currentAuthor()
+    const { data, error } = await this.client.rpc('create_episode', {
       p_family_id: familyId,
       p_person_id: personId,
       p_episode: {
@@ -65,6 +86,7 @@ export class SupabaseEpisodeRepository implements EpisodeRepository {
         symptoms: input.symptoms || [],
         tags: input.tags || [],
       },
+      p_author_id: authorId,
     })
     if (error) throw error
     if (!data || typeof data.id !== 'string')
@@ -110,7 +132,36 @@ export class SupabaseEpisodeRepository implements EpisodeRepository {
     personId: string,
     episodeId: string,
     status: any,
+    authorId?: string,
   ) {
+    if (status === 'completed') {
+      // M002 D2: completion goes through the atomic complete_episode
+      // compound function, which also inserts the episode_end event.
+      const episode = await this.get(familyId, personId, episodeId)
+      if (!episode) return null
+      const author =
+        typeof authorId === 'string' && authorId
+          ? authorId
+          : await this.currentAuthor()
+      const { data, error } = await this.client.rpc('complete_episode', {
+        p_family_id: familyId,
+        p_person_id: personId,
+        p_episode_id: episodeId,
+        // The episode_end event moment is the episode's end date; M001 does
+        // not require an explicit end date on completion, so fall back to now.
+        p_ended_at: episode.endedAt ?? new Date().toISOString(),
+        p_outcome: episode.outcome,
+        p_author_id: author,
+      })
+      if (error) throw error
+      if (!data || typeof data.id !== 'string')
+        throw new Error('Episode was not returned')
+      const result = await this.get(familyId, personId, data.id)
+      if (!result) throw new Error('Episode was not returned')
+      return result
+    }
+    // Reopening a completed episode intentionally creates no events and
+    // stays on the plain RLS update path (M002 D2).
     const { data, error } = await this.client
       .from('episodes')
       .update({ status, updated_at: new Date().toISOString() })

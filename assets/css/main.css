@@ -83,6 +83,64 @@ p[role='alert'],
 .field-error {
   font-size: 0.875rem;
 }
+.event-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+  max-width: none;
+}
+.event-filters label {
+  margin: 0;
+}
+.event-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: grid;
+  gap: 1rem;
+}
+.event-item {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  max-width: 48rem;
+  overflow-wrap: anywhere;
+}
+.event-meta {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+}
+.event-title {
+  margin: 0;
+}
+.event-description {
+  margin: 0.5rem 0 0;
+}
+.event-readonly {
+  color: #475569;
+}
+.event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.event-pager {
+  display: flex;
+  gap: 0.5rem;
+}
+.event-form,
+.note-form {
+  max-width: none;
+}
+.event-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.episode-timeline {
+  margin-top: 2rem;
+}
 @media (max-width: 40rem) {
   .app-header {
     align-items: flex-start;

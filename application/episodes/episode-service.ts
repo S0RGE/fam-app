@@ -40,8 +40,15 @@ export class EpisodeService {
       total: r.total,
     }))
   }
-  create(familyId: string, personId: string, input: EpisodeCreateInput) {
-    return this.episodes.create(familyId, personId, input).then(episodeDto)
+  create(
+    familyId: string,
+    personId: string,
+    input: EpisodeCreateInput,
+    authorId?: string,
+  ) {
+    return this.episodes
+      .create(familyId, personId, { ...input, authorId })
+      .then(episodeDto)
   }
   get(familyId: string, personId: string, id: string) {
     return this.episodes
@@ -63,9 +70,10 @@ export class EpisodeService {
     personId: string,
     id: string,
     status: 'active' | 'completed',
+    authorId?: string,
   ) {
     return this.episodes
-      .setStatus(familyId, personId, id, status)
+      .setStatus(familyId, personId, id, status, authorId)
       .then((e) => e && episodeDto(e))
   }
   delete(familyId: string, personId: string, id: string) {

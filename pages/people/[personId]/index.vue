@@ -236,6 +236,7 @@ onBeforeRouteLeave(
       ><button v-else @click="transition('restore')">Восстановить</button>
       <p>
         <NuxtLink :to="`/people/${id}/episodes`">Эпизоды</NuxtLink>
+        <NuxtLink :to="`/people/${id}/timeline`">Хронология</NuxtLink>
       </p>
       <h2>Медицинский профиль</h2>
       <p v-if="profilePending" role="status">Загрузка медицинского профиля…</p>

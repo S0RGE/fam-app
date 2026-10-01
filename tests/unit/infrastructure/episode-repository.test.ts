@@ -34,6 +34,7 @@ interface QueryChain {
   data: unknown
   error: null
   select(): QueryChain
+  update(): QueryChain
   eq(field: string, value: unknown): QueryChain
   order(): QueryChain
   range(): QueryChain
@@ -53,6 +54,7 @@ function chainWith(resolvedData: unknown) {
     },
     order: () => chain,
     range: () => chain,
+    update: () => chain,
     maybeSingle: async () => ({ data: resolvedData, error: null }),
     delete: () => chain,
   }
@@ -94,12 +96,14 @@ describe('SupabaseEpisodeRepository tenant boundaries', () => {
     ])
   })
 
-  it('create calls upsert_episode without an id and returns the created episode', async () => {
+  it('create calls create_episode without an id and passes the author (M002 D2)', async () => {
+    let rpcFn = ''
     let rpcArgs: unknown
     const { chain } = chainWith({ id: 'new-id' })
     const repository = new SupabaseEpisodeRepository({
       from: () => chain,
-      rpc: (_fn: string, args: unknown) => {
+      rpc: (fn: string, args: unknown) => {
+        rpcFn = fn
         rpcArgs = args
         return Promise.resolve({ data: { id: 'new-id' }, error: null })
       },
@@ -112,13 +116,102 @@ describe('SupabaseEpisodeRepository tenant boundaries', () => {
       outcome: null,
       symptoms: [],
       tags: [],
+      authorId: 'account-1',
     } as never)
     expect(result.id).toBe('new-id')
+    expect(rpcFn).toBe('create_episode')
     expect(rpcArgs).toMatchObject({
       p_family_id: 'family-a',
       p_person_id: 'person-b',
       p_episode: { title: 'ОРВИ' },
+      p_author_id: 'account-1',
     })
+    const pEpisode = (
+      rpcArgs as {
+        p_episode?: Record<string, unknown>
+      }
+    )?.p_episode
+    expect(pEpisode?.id).toBeUndefined()
+  })
+
+  it('completed transition calls complete_episode with the episode end date and author (M002 D2)', async () => {
+    let rpcFn = ''
+    let rpcArgs: unknown
+    const endedRow = { ...row, ended_at: '2026-01-05T00:00:00Z' }
+    const { chain } = chainWith(endedRow)
+    const repository = new SupabaseEpisodeRepository({
+      from: () => chain,
+      rpc: (fn: string, args: unknown) => {
+        rpcFn = fn
+        rpcArgs = args
+        return Promise.resolve({ data: { id: 'episode-id' }, error: null })
+      },
+    } as never)
+    const result = await repository.setStatus(
+      'family-a',
+      'person-b',
+      'episode-id',
+      'completed',
+      'account-1',
+    )
+    expect(result?.id).toBe('episode-id')
+    expect(rpcFn).toBe('complete_episode')
+    expect(rpcArgs).toEqual({
+      p_family_id: 'family-a',
+      p_person_id: 'person-b',
+      p_episode_id: 'episode-id',
+      p_ended_at: '2026-01-05T00:00:00Z',
+      p_outcome: null,
+      p_author_id: 'account-1',
+    })
+  })
+
+  it('completed transition without an explicit end date falls back to now (M002 D2)', async () => {
+    let rpcArgs: unknown
+    const { chain } = chainWith(row)
+    const repository = new SupabaseEpisodeRepository({
+      from: () => chain,
+      rpc: (_fn: string, args: unknown) => {
+        rpcArgs = args
+        return Promise.resolve({ data: { id: 'episode-id' }, error: null })
+      },
+    } as never)
+    await repository.setStatus(
+      'family-a',
+      'person-b',
+      'episode-id',
+      'completed',
+      'account-1',
+    )
+    const endedAt = new Date(
+      (rpcArgs as Record<string, unknown>)['p_ended_at'] as string,
+    )
+    expect(Number.isNaN(endedAt.getTime())).toBe(false)
+    expect(Math.abs(endedAt.getTime() - Date.now())).toBeLessThan(60_000)
+  })
+
+  it('reopening a completed episode stays on the RLS update path without rpc (M002 D2)', async () => {
+    let rpcCalls = 0
+    const { chain, filters } = chainWith(row)
+    const repository = new SupabaseEpisodeRepository({
+      from: () => chain,
+      rpc: () => {
+        rpcCalls++
+        return Promise.resolve({ data: null, error: null })
+      },
+    } as never)
+    const result = await repository.setStatus(
+      'family-a',
+      'person-b',
+      'episode-id',
+      'active',
+      'account-1',
+    )
+    expect(result?.id).toBe('episode-id')
+    expect(rpcCalls).toBe(0)
+    expect(filters).toContainEqual(['id', 'episode-id'])
+    expect(filters).toContainEqual(['family_id', 'family-a'])
+    expect(filters).toContainEqual(['person_id', 'person-b'])
   })
 
   it('update calls upsert_episode with the episode id', async () => {

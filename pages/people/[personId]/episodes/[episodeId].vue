@@ -10,6 +10,26 @@ type Episode = {
   symptoms: { id: string; name: string; description: string | null }[]
   tags: { id: string; name: string }[]
 }
+type RelatedEvent = {
+  id: string
+  type:
+    | 'note'
+    | 'measurement'
+    | 'lab_report'
+    | 'visit'
+    | 'prescription'
+    | 'document'
+    | 'episode_start'
+    | 'episode_end'
+  occurredAt: string
+  title: string
+  description: string | null
+  source: string
+  authorId: string
+  episodeId: string | null
+  createdAt: string
+  updatedAt: string
+}
 
 const route = useRoute()
 const personId = route.params.personId as string
@@ -19,6 +39,54 @@ const { data, error, pending, refresh } = await useFetch<{
   data: Episode
 }>(() => `/api/v1/people/${personId}/episodes/${episodeId}`)
 const episode = computed<Episode | null>(() => data.value?.data || null)
+
+const {
+  data: eventsData,
+  error: eventsError,
+  pending: eventsPending,
+  refresh: refreshEvents,
+} = await useFetch<{ data: RelatedEvent[]; meta: { total: number } }>(
+  () =>
+    `/api/v1/people/${personId}/timeline?limit=100&offset=0&episodeId=${episodeId}`,
+)
+
+const noteTitle = ref('')
+const noteDescription = ref('')
+const noteOccurredAt = ref('')
+const noteBusy = ref(false)
+const noteError = ref('')
+const noteFields = ref<Record<string, string>>({})
+
+async function addNote() {
+  noteBusy.value = true
+  noteError.value = ''
+  noteFields.value = {}
+  try {
+    await $fetch(`/api/v1/people/${personId}/timeline`, {
+      method: 'POST',
+      body: {
+        title: noteTitle.value,
+        description: noteDescription.value || null,
+        occurredAt: new Date(noteOccurredAt.value).toISOString(),
+        episodeId,
+      },
+    })
+    noteTitle.value = ''
+    noteDescription.value = ''
+    noteOccurredAt.value = ''
+    await refreshEvents()
+  } catch (cause: unknown) {
+    noteFields.value =
+      (cause as { data?: { error?: { fields?: Record<string, string> } } }).data
+        ?.error?.fields || {}
+    noteError.value = 'Не удалось добавить заметку. Проверьте поля.'
+  } finally {
+    noteBusy.value = false
+  }
+}
+function noteFieldError(key: string) {
+  return noteFields.value[key]
+}
 
 const busy = ref(false)
 const message = ref('')
@@ -310,6 +378,61 @@ onBeforeRouteLeave(
           Удалить
         </button>
       </p>
+
+      <section class="episode-timeline">
+        <h2>Хронология связанных событий</h2>
+        <p v-if="eventsPending" role="status">Загрузка событий…</p>
+        <p v-else-if="eventsError" role="alert">
+          Не удалось загрузить связанные события.
+        </p>
+        <p v-else-if="!eventsData || !eventsData.data.length">
+          Связанных событий пока нет.
+        </p>
+        <EventList v-else :events="eventsData.data" :person-id="personId" />
+
+        <form class="note-form" @submit.prevent="addNote">
+          <h3>Добавить заметку</h3>
+          <label>
+            Заголовок
+            <input
+              v-model="noteTitle"
+              required
+              maxlength="120"
+              :disabled="noteBusy"
+            />
+            <span v-if="noteFieldError('title')" class="field-error">{{
+              noteFields.title
+            }}</span>
+          </label>
+          <label>
+            Текст
+            <textarea
+              v-model="noteDescription"
+              maxlength="5000"
+              :disabled="noteBusy"
+            ></textarea>
+            <span v-if="noteFieldError('description')" class="field-error">{{
+              noteFields.description
+            }}</span>
+          </label>
+          <label>
+            Дата и время
+            <input
+              v-model="noteOccurredAt"
+              type="datetime-local"
+              required
+              :disabled="noteBusy"
+            />
+            <span v-if="noteFieldError('occurredAt')" class="field-error">{{
+              noteFields.occurredAt
+            }}</span>
+          </label>
+          <p v-if="noteError" role="alert">{{ noteError }}</p>
+          <button type="submit" :disabled="noteBusy">
+            {{ noteBusy ? 'Добавление…' : 'Добавить заметку' }}
+          </button>
+        </form>
+      </section>
     </template>
   </section>
 </template>

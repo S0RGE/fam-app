@@ -13,7 +13,7 @@ export default defineApiHandler(async (event) => {
   requireSameOrigin(event)
   const id = validate(getRouterParam(event, 'personId'), z.string().uuid())
   const input = await validateBody(event, episodeCreateSchema)
-  const { family, supabase } = await requireFamily(event)
+  const { family, supabase, id: authorId } = await requireFamily(event)
   if (!(await new SupabasePersonRepository(supabase).get(family.id, id)))
     throw createError({
       statusCode: 404,
@@ -22,6 +22,6 @@ export default defineApiHandler(async (event) => {
   return {
     data: await new EpisodeService(
       new SupabaseEpisodeRepository(supabase),
-    ).create(family.id, id, input),
+    ).create(family.id, id, input, authorId),
   }
 })
