@@ -65,14 +65,14 @@ const profileDirty = ref(false)
 const saving = ref(false)
 watch(
   personData,
-  (value: { data: Person } | null) => {
+  (value) => {
     if (value?.data) Object.assign(person, value.data)
   },
   { immediate: true },
 )
 watch(
   profileData,
-  (value: { data: { profile: Profile | null } } | null) => {
+  (value) => {
     if (value?.data.profile) Object.assign(profile, value.data.profile)
   },
   { immediate: true, deep: true },
