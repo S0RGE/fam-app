@@ -1,13 +1,15 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const migration = readFileSync(
-  new URL(
-    '../../../supabase/migrations/0001_auth_family_people_profiles.sql',
-    import.meta.url,
-  ),
-  'utf8',
-)
+const here = dirname(fileURLToPath(import.meta.url))
+const migrationsDir = join(here, '../../../supabase/migrations')
+const migration = readdirSync(migrationsDir)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .map((f) => readFileSync(join(migrationsDir, f), 'utf8'))
+  .join('\n')
 
 const tables = [
   'families',
@@ -15,6 +17,10 @@ const tables = [
   'people',
   'medical_profiles',
   'medical_profile_items',
+  'episodes',
+  'episode_symptoms',
+  'tags',
+  'episode_tags',
 ]
 
 describe('auth/family migration security contract', () => {
@@ -40,6 +46,18 @@ describe('auth/family migration security contract', () => {
     expect(migration).toContain(
       'fa.family_id=medical_profile_items.family_id and fa.account_id=auth.uid()',
     )
+    expect(migration).toContain(
+      'fa.family_id=episodes.family_id and fa.account_id=auth.uid()',
+    )
+    expect(migration).toContain(
+      'fa.family_id=episode_symptoms.family_id and fa.account_id=auth.uid()',
+    )
+    expect(migration).toContain(
+      'fa.family_id=tags.family_id and fa.account_id=auth.uid()',
+    )
+    expect(migration).toContain(
+      'fa.family_id=episode_tags.family_id and fa.account_id=auth.uid()',
+    )
   })
 
   it('hardens callable functions and grants only authenticated execution', () => {
@@ -57,6 +75,15 @@ describe('auth/family migration security contract', () => {
     )
     expect(migration).toContain(
       'grant execute on function public.put_medical_profile(uuid,uuid,jsonb) to authenticated',
+    )
+    expect(migration).toMatch(
+      /public\.upsert_episode\([\s\S]*security invoker set search_path=''/,
+    )
+    expect(migration).toContain(
+      'revoke execute on function public.upsert_episode(uuid,uuid,jsonb) from public',
+    )
+    expect(migration).toContain(
+      'grant execute on function public.upsert_episode(uuid,uuid,jsonb) to authenticated',
     )
   })
 })
