@@ -99,9 +99,7 @@ async function createEpisode() {
     offset.value = 0
     await refresh()
   } catch (cause: unknown) {
-    formFields.value =
-      (cause as { data?: { error?: { fields?: Record<string, string> } } }).data
-        ?.error?.fields || {}
+    formFields.value = parseApiError(cause).fields
     formError.value = 'Не удалось создать эпизод. Проверьте поля.'
   } finally {
     submitting.value = false
@@ -122,161 +120,265 @@ function fieldError(key: string) {
 }
 </script>
 <template>
-  <section>
-    <h1>Эпизоды</h1>
-    <p><NuxtLink :to="`/people/${id}`">Назад к профилю</NuxtLink></p>
+  <UPage class="gap-6">
+    <UPageHeader :title="'Эпизоды'">
+      <template #description>
+        <NuxtLink
+          :to="`/people/${id}`"
+          class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
+          >Назад к профилю</NuxtLink
+        >
+      </template>
+      <template #links>
+        <UButton type="button" size="sm" @click="showForm = !showForm">
+          {{ showForm ? 'Скрыть форму' : 'Добавить эпизод' }}
+        </UButton>
+      </template>
+    </UPageHeader>
 
-    <div class="episodes-toolbar">
-      <label>
-        Статус
-        <select v-model="statusFilter" @change="applyFilter">
+    <UPageCard>
+      <UFormField label="Статус">
+        <select
+          v-model="statusFilter"
+          class="native-select"
+          aria-label="Статус"
+          @change="applyFilter"
+        >
           <option value="">Все</option>
           <option value="active">Активные</option>
           <option value="completed">Завершённые</option>
         </select>
-      </label>
-      <button type="button" @click="showForm = !showForm">
-        {{ showForm ? 'Скрыть форму' : 'Добавить эпизод' }}
-      </button>
-    </div>
+      </UFormField>
+    </UPageCard>
 
-    <form v-if="showForm" class="episode-form" @submit.prevent="createEpisode">
-      <h2>Новый эпизод</h2>
-      <label>
-        Название
-        <input v-model="form.title" required maxlength="120" />
-        <span v-if="fieldError('title')" class="field-error">{{
-          formFields.title
-        }}</span>
-      </label>
-      <label>
-        Описание
-        <textarea v-model="form.description" maxlength="5000"></textarea>
-        <span v-if="fieldError('description')" class="field-error">{{
-          formFields.description
-        }}</span>
-      </label>
-      <label>
-        Дата начала
-        <input v-model="form.startedAt" type="datetime-local" required />
-        <span v-if="fieldError('startedAt')" class="field-error">{{
-          formFields.startedAt
-        }}</span>
-      </label>
-      <label>
-        Дата завершения
-        <input v-model="form.endedAt" type="datetime-local" />
-        <span v-if="fieldError('endedAt')" class="field-error">{{
-          formFields.endedAt
-        }}</span>
-      </label>
-      <label>
-        Итог
-        <textarea v-model="form.outcome" maxlength="2000"></textarea>
-        <span v-if="fieldError('outcome')" class="field-error">{{
-          formFields.outcome
-        }}</span>
-      </label>
-      <h3>Симптомы</h3>
-      <p v-if="!form.symptoms.length">Симптомы не добавлены.</p>
-      <fieldset v-for="(symptom, index) in form.symptoms" :key="index">
-        <label>
-          Название симптома
-          <input v-model="symptom.name" required maxlength="200" />
-          <span
+    <UPageCard v-if="showForm">
+      <template #header>
+        <h2 class="text-base font-semibold">Новый эпизод</h2>
+      </template>
+      <form class="flex flex-col gap-4" @submit.prevent="createEpisode">
+        <UFormField label="Название">
+          <UInput v-model="form.title" required :maxlength="120" />
+        </UFormField>
+        <p
+          v-if="fieldError('title')"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
+          {{ formFields.title }}
+        </p>
+        <UFormField label="Описание">
+          <UTextarea v-model="form.description" :maxlength="5000" :rows="3" />
+        </UFormField>
+        <p
+          v-if="fieldError('description')"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
+          {{ formFields.description }}
+        </p>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <UFormField label="Дата начала">
+            <UInput v-model="form.startedAt" type="datetime-local" required />
+          </UFormField>
+          <UFormField label="Дата завершения">
+            <UInput v-model="form.endedAt" type="datetime-local" />
+          </UFormField>
+        </div>
+        <p
+          v-if="fieldError('startedAt') || fieldError('endedAt')"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
+          {{ formFields.startedAt || formFields.endedAt }}
+        </p>
+        <UFormField label="Итог">
+          <UTextarea v-model="form.outcome" :maxlength="2000" :rows="3" />
+        </UFormField>
+        <p
+          v-if="fieldError('outcome')"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
+          {{ formFields.outcome }}
+        </p>
+        <h3 class="text-sm font-semibold">Симптомы</h3>
+        <p
+          v-if="!form.symptoms.length"
+          class="text-sm text-neutral-600 dark:text-neutral-400"
+        >
+          Симптомы не добавлены.
+        </p>
+        <fieldset
+          v-for="(symptom, index) in form.symptoms"
+          :key="index"
+          class="m-0 flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+        >
+          <UFormField label="Название симптома">
+            <UInput v-model="symptom.name" required :maxlength="200" />
+          </UFormField>
+          <p
             v-if="fieldError(`symptoms.${index}.name`)"
-            class="field-error"
-            >{{ formFields[`symptoms.${index}.name`] }}</span
+            class="text-sm text-red-700 dark:text-red-400"
           >
-        </label>
-        <label>
-          Описание
-          <textarea v-model="symptom.description" maxlength="2000"></textarea>
-          <span
+            {{ formFields[`symptoms.${index}.name`] }}
+          </p>
+          <UFormField label="Описание">
+            <UTextarea
+              v-model="symptom.description"
+              :maxlength="2000"
+              :rows="2"
+            />
+          </UFormField>
+          <p
             v-if="fieldError(`symptoms.${index}.description`)"
-            class="field-error"
-            >{{ formFields[`symptoms.${index}.description`] }}</span
+            class="text-sm text-red-700 dark:text-red-400"
           >
-        </label>
-        <button type="button" @click="removeSymptom(index)">
-          Удалить симптом
-        </button>
-      </fieldset>
-      <button type="button" @click="addSymptom">Добавить симптом</button>
-      <label>
-        Теги (через запятую)
-        <input v-model="form.tags" placeholder="например: сезонный, аллергия" />
-        <span v-if="fieldError('tags')" class="field-error">{{
-          formFields.tags
-        }}</span>
-      </label>
-      <p v-if="formError" role="alert">{{ formError }}</p>
-      <div class="episode-form-actions">
-        <button type="submit" :disabled="submitting">
-          {{ submitting ? 'Создание…' : 'Создать эпизод' }}
-        </button>
-        <button type="button" :disabled="submitting" @click="clearForm">
-          Отменить
-        </button>
-      </div>
-    </form>
+            {{ formFields[`symptoms.${index}.description`] }}
+          </p>
+          <div>
+            <UButton
+              type="button"
+              color="error"
+              variant="ghost"
+              size="sm"
+              @click="removeSymptom(index)"
+            >
+              Удалить симптом
+            </UButton>
+          </div>
+        </fieldset>
+        <div>
+          <UButton
+            type="button"
+            variant="outline"
+            size="sm"
+            @click="addSymptom"
+          >
+            Добавить симптом
+          </UButton>
+        </div>
+        <UFormField label="Теги (через запятую)">
+          <UInput
+            v-model="form.tags"
+            placeholder="например: сезонный, аллергия"
+          />
+        </UFormField>
+        <p
+          v-if="fieldError('tags')"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
+          {{ formFields.tags }}
+        </p>
+        <p
+          v-if="formError"
+          role="alert"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
+          {{ formError }}
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <UButton type="submit" :loading="submitting">Создать эпизод</UButton>
+          <UButton
+            type="button"
+            variant="outline"
+            :disabled="submitting"
+            @click="clearForm"
+          >
+            Отменить
+          </UButton>
+        </div>
+      </form>
+    </UPageCard>
 
-    <h2>Список</h2>
-    <p v-if="pending" role="status">Загрузка эпизодов…</p>
-    <p v-else-if="error" role="alert">Не удалось загрузить эпизоды.</p>
-    <p v-else-if="!data || !data.data.length">
-      Эпизодов пока нет. Добавьте первый эпизод.
-    </p>
-    <template v-else>
-      <ul class="episodes-list">
-        <li v-for="episode in data.data" :key="episode.id">
-          <h3>
-            <NuxtLink :to="`/people/${id}/episodes/${episode.id}`">{{
-              episode.title
-            }}</NuxtLink>
-          </h3>
-          <p>
-            <span class="episode-status">{{
-              episode.status === 'active' ? 'Активен' : 'Завершён'
-            }}</span>
-            · начался: {{ formatDay(episode.startedAt) }}
-            <template v-if="episode.endedAt">
-              · завершён: {{ formatDay(episode.endedAt) }}
-            </template>
-          </p>
-          <p v-if="episode.symptoms.length">
-            Симптомы:
-            {{
-              episode.symptoms
-                .map((symptom: { name: string }) => symptom.name)
-                .join(', ')
-            }}
-          </p>
-          <p v-if="episode.tags.length">
-            Теги:
-            {{
-              episode.tags.map((tag: { name: string }) => tag.name).join(', ')
-            }}
-          </p>
-        </li>
-      </ul>
-      <p>Всего: {{ data.meta.total }}</p>
-      <p v-if="data.meta.total > 0" class="episodes-pager">
-        <button
-          type="button"
-          :disabled="offset === 0 || pending"
-          @click="step(false)"
-        >
-          Назад
-        </button>
-        <button
-          type="button"
-          :disabled="offset + limit >= data.meta.total || pending"
-          @click="step(true)"
-        >
-          Дальше
-        </button>
+    <UPageCard>
+      <template #header>
+        <h2 class="text-base font-semibold">Список</h2>
+      </template>
+      <p
+        v-if="pending"
+        role="status"
+        class="text-sm text-neutral-600 dark:text-neutral-400"
+      >
+        Загрузка эпизодов…
       </p>
-    </template>
-  </section>
+      <p
+        v-else-if="error"
+        role="alert"
+        class="text-sm text-red-700 dark:text-red-400"
+      >
+        Не удалось загрузить эпизоды.
+      </p>
+      <p
+        v-else-if="!data || !data.data.length"
+        class="text-sm text-neutral-600 dark:text-neutral-400"
+      >
+        Эпизодов пока нет. Добавьте первый эпизод.
+      </p>
+      <template v-else>
+        <ul class="m-0 grid list-none gap-3 p-0">
+          <li
+            v-for="episode in data.data"
+            :key="episode.id"
+            class="min-w-0 rounded-lg border border-neutral-200 p-4 dark:border-neutral-700"
+          >
+            <h3 class="break-words text-base font-semibold">
+              <NuxtLink
+                :to="`/people/${id}/episodes/${episode.id}`"
+                class="text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
+              >
+                {{ episode.title }}
+              </NuxtLink>
+            </h3>
+            <div
+              class="mt-2 flex flex-wrap items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400"
+            >
+              <UBadge
+                :color="episode.status === 'active' ? 'success' : 'neutral'"
+                variant="soft"
+              >
+                {{ episode.status === 'active' ? 'Активен' : 'Завершён' }}
+              </UBadge>
+              <span>начался: {{ formatDay(episode.startedAt) }}</span>
+              <span v-if="episode.endedAt"
+                >завершён: {{ formatDay(episode.endedAt) }}</span
+              >
+            </div>
+            <p v-if="episode.symptoms.length" class="mt-2 break-words text-sm">
+              Симптомы:
+              {{
+                episode.symptoms
+                  .map((symptom: { name: string }) => symptom.name)
+                  .join(', ')
+              }}
+            </p>
+            <p v-if="episode.tags.length" class="mt-2 break-words text-sm">
+              Теги:
+              {{
+                episode.tags.map((tag: { name: string }) => tag.name).join(', ')
+              }}
+            </p>
+          </li>
+        </ul>
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p class="text-sm font-medium">Всего: {{ data.meta.total }}</p>
+          <div v-if="data.meta.total > 0" class="flex gap-2">
+            <UButton
+              type="button"
+              variant="outline"
+              size="sm"
+              :disabled="offset === 0 || pending"
+              @click="step(false)"
+            >
+              Назад
+            </UButton>
+            <UButton
+              type="button"
+              variant="outline"
+              size="sm"
+              :disabled="offset + limit >= data.meta.total || pending"
+              @click="step(true)"
+            >
+              Дальше
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UPageCard>
+  </UPage>
 </template>

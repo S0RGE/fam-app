@@ -1,7 +1,10 @@
 <template>
-  <section aria-labelledby="page-title">
-    <p class="eyebrow">Поиск</p>
-    <h1 id="page-title">Глобальный поиск</h1>
-    <p>Поиск по семейным данным будет доступен после подключения API.</p>
-  </section>
+  <UPage class="gap-6">
+    <UPageHeader headline="Поиск" :title="'Глобальный поиск'" />
+    <UPageCard>
+      <p class="text-sm text-neutral-600 dark:text-neutral-400">
+        Поиск по семейным данным будет доступен после подключения API.
+      </p>
+    </UPageCard>
+  </UPage>
 </template>

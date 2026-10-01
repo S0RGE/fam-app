@@ -1,7 +1,10 @@
 <template>
-  <section aria-labelledby="page-title">
-    <p class="eyebrow">Импорт JSON</p>
-    <h1 id="page-title">Импорт медицинских данных</h1>
-    <p>Проверка и предварительный просмотр JSON будут добавлены позже.</p>
-  </section>
+  <UPage class="gap-6">
+    <UPageHeader headline="Импорт JSON" :title="'Импорт медицинских данных'" />
+    <UPageCard>
+      <p class="text-sm text-neutral-600 dark:text-neutral-400">
+        Проверка и предварительный просмотр JSON будут добавлены позже.
+      </p>
+    </UPageCard>
+  </UPage>
 </template>

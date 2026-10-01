@@ -76,9 +76,7 @@ async function addNote() {
     noteOccurredAt.value = ''
     await refreshEvents()
   } catch (cause: unknown) {
-    noteFields.value =
-      (cause as { data?: { error?: { fields?: Record<string, string> } } }).data
-        ?.error?.fields || {}
+    noteFields.value = parseApiError(cause).fields
     noteError.value = 'Не удалось добавить заметку. Проверьте поля.'
   } finally {
     noteBusy.value = false
@@ -170,9 +168,7 @@ async function save() {
     message.value = 'Эпизод сохранён.'
     await refresh()
   } catch (cause: unknown) {
-    formFields.value =
-      (cause as { data?: { error?: { fields?: Record<string, string> } } }).data
-        ?.error?.fields || {}
+    formFields.value = parseApiError(cause).fields
     formError.value = 'Не удалось сохранить эпизод. Проверьте поля.'
   } finally {
     busy.value = false
@@ -235,204 +231,358 @@ onBeforeRouteLeave(
 )
 </script>
 <template>
-  <section>
-    <h1>Эпизод</h1>
-    <p>
-      <NuxtLink :to="`/people/${personId}/episodes`">
-        К списку эпизодов
-      </NuxtLink>
+  <UPage class="gap-6">
+    <UPageHeader :title="'Эпизод'">
+      <template #description>
+        <NuxtLink
+          :to="`/people/${personId}/episodes`"
+          class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
+          >К списку эпизодов</NuxtLink
+        >
+      </template>
+    </UPageHeader>
+    <p
+      v-if="pending"
+      role="status"
+      class="text-sm text-neutral-600 dark:text-neutral-400"
+    >
+      Загрузка эпизода…
     </p>
-    <p v-if="pending" role="status">Загрузка эпизода…</p>
-    <p v-else-if="error" role="alert">Эпизод не найден или недоступен.</p>
+    <p
+      v-else-if="error"
+      role="alert"
+      class="text-sm text-red-700 dark:text-red-400"
+    >
+      Эпизод не найден или недоступен.
+    </p>
     <template v-else-if="episode">
-      <p v-if="message" role="status">{{ message }}</p>
-      <p v-if="formError" role="alert">{{ formError }}</p>
-      <header class="episode-header">
-        <h2>{{ episode.title }}</h2>
-        <p>
-          <span class="episode-status">{{
-            episode.status === 'active' ? 'Активен' : 'Завершён'
-          }}</span>
+      <p
+        v-if="message"
+        role="status"
+        class="text-sm text-emerald-700 dark:text-emerald-400"
+      >
+        {{ message }}
+      </p>
+      <p
+        v-if="formError"
+        role="alert"
+        class="text-sm text-red-700 dark:text-red-400"
+      >
+        {{ formError }}
+      </p>
+      <UPageCard>
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="break-words text-xl font-semibold">
+              {{ episode.title }}
+            </h2>
+            <UBadge
+              :color="episode.status === 'active' ? 'success' : 'neutral'"
+              variant="soft"
+            >
+              {{ episode.status === 'active' ? 'Активен' : 'Завершён' }}
+            </UBadge>
+          </div>
+        </template>
+        <dl class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt
+              class="text-sm font-medium text-neutral-600 dark:text-neutral-400"
+            >
+              Начался
+            </dt>
+            <dd class="m-0 mt-1 break-words">
+              {{ formatInstant(episode.startedAt) }} (UTC)
+            </dd>
+          </div>
+          <div>
+            <dt
+              class="text-sm font-medium text-neutral-600 dark:text-neutral-400"
+            >
+              Завершён
+            </dt>
+            <dd class="m-0 mt-1 break-words">
+              {{
+                episode.endedAt
+                  ? `${formatInstant(episode.endedAt)} (UTC)`
+                  : 'Не завершён'
+              }}
+            </dd>
+          </div>
+        </dl>
+        <p
+          v-if="episode.description"
+          class="mt-4 whitespace-pre-wrap break-words"
+        >
+          {{ episode.description }}
         </p>
-      </header>
-      <dl class="episode-meta">
-        <div>
-          <dt>Начался</dt>
-          <dd>{{ formatInstant(episode.startedAt) }} (UTC)</dd>
+        <div class="mt-4 grid gap-4 sm:grid-cols-3">
+          <section>
+            <h3 class="text-sm font-semibold">Итог</h3>
+            <p class="mt-1 break-words text-sm">
+              {{ episode.outcome || 'Не указан.' }}
+            </p>
+          </section>
+          <section>
+            <h3 class="text-sm font-semibold">Симптомы</h3>
+            <p v-if="!episode.symptoms.length" class="mt-1 text-sm">
+              Симптомы не указаны.
+            </p>
+            <ul v-else class="mt-1 pl-5 text-sm">
+              <li v-for="symptom in episode.symptoms" :key="symptom.id">
+                <strong>{{ symptom.name }}</strong>
+                <span v-if="symptom.description">
+                  — {{ symptom.description }}</span
+                >
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h3 class="text-sm font-semibold">Теги</h3>
+            <p class="mt-1 break-words text-sm">
+              {{
+                episode.tags.length
+                  ? episode.tags
+                      .map((tag: { name: string }) => tag.name)
+                      .join(', ')
+                  : 'Теги не указаны.'
+              }}
+            </p>
+          </section>
         </div>
-        <div>
-          <dt>Завершён</dt>
-          <dd>
-            {{
-              episode.endedAt
-                ? `${formatInstant(episode.endedAt)} (UTC)`
-                : 'Не завершён'
-            }}
-          </dd>
+        <div v-if="!editing" class="mt-5 flex flex-wrap gap-2">
+          <UButton type="button" :disabled="busy" @click="editing = true">
+            Редактировать
+          </UButton>
+          <UButton
+            type="button"
+            variant="outline"
+            :disabled="busy"
+            @click="transition"
+          >
+            {{ episode.status === 'active' ? 'Завершить' : 'Повторно открыть' }}
+          </UButton>
+          <UButton
+            type="button"
+            color="error"
+            variant="soft"
+            :disabled="busy"
+            @click="remove"
+          >
+            Удалить
+          </UButton>
         </div>
-      </dl>
-      <p v-if="episode.description">{{ episode.description }}</p>
-      <h3>Итог</h3>
-      <p>{{ episode.outcome || 'Не указан.' }}</p>
-      <h3>Симптомы</h3>
-      <p v-if="!episode.symptoms.length">Симптомы не указаны.</p>
-      <ul v-else>
-        <li v-for="symptom in episode.symptoms" :key="symptom.id">
-          <strong>{{ symptom.name }}</strong>
-          <span v-if="symptom.description"> — {{ symptom.description }}</span>
-        </li>
-      </ul>
-      <h3>Теги</h3>
-      <p v-if="!episode.tags.length">Теги не указаны.</p>
-      <p v-else>
-        {{ episode.tags.map((tag: { name: string }) => tag.name).join(', ') }}
-      </p>
+      </UPageCard>
 
-      <form v-if="editing" @submit.prevent="save">
-        <h2>Редактирование</h2>
-        <label>
-          Название
-          <input v-model="form.title" required maxlength="120" />
-          <span v-if="fieldError('title')" class="field-error">{{
-            formFields.title
-          }}</span>
-        </label>
-        <label>
-          Описание
-          <textarea v-model="form.description" maxlength="5000"></textarea>
-          <span v-if="fieldError('description')" class="field-error">{{
-            formFields.description
-          }}</span>
-        </label>
-        <label>
-          Дата начала
-          <input v-model="form.startedAt" type="datetime-local" required />
-          <span v-if="fieldError('startedAt')" class="field-error">{{
-            formFields.startedAt
-          }}</span>
-        </label>
-        <label>
-          Дата завершения
-          <input v-model="form.endedAt" type="datetime-local" />
-          <span v-if="fieldError('endedAt')" class="field-error">{{
-            formFields.endedAt
-          }}</span>
-        </label>
-        <label>
-          Итог
-          <textarea v-model="form.outcome" maxlength="2000"></textarea>
-          <span v-if="fieldError('outcome')" class="field-error">{{
-            formFields.outcome
-          }}</span>
-        </label>
-        <h3>Симптомы</h3>
-        <p v-if="!form.symptoms.length">Симптомы не добавлены.</p>
-        <fieldset v-for="(symptom, index) in form.symptoms" :key="index">
-          <label>
-            Название симптома
-            <input v-model="symptom.name" required maxlength="200" />
-            <span v-if="fieldError(`symptoms.${index}.name`)">
-              <span class="field-error">{{
-                formFields[`symptoms.${index}.name`]
-              }}</span>
-            </span>
-          </label>
-          <label>
-            Описание
-            <textarea v-model="symptom.description" maxlength="2000"></textarea>
-            <span v-if="fieldError(`symptoms.${index}.description`)">
-              <span class="field-error">{{
-                formFields[`symptoms.${index}.description`]
-              }}</span>
-            </span>
-          </label>
-          <button type="button" @click="removeSymptom(index)">
-            Удалить симптом
-          </button>
-        </fieldset>
-        <button type="button" @click="addSymptom">Добавить симптом</button>
-        <label>
-          Теги (через запятую)
-          <input v-model="form.tags" />
-          <span v-if="fieldError('tags')" class="field-error">{{
-            formFields.tags
-          }}</span>
-        </label>
-        <div class="episode-form-actions">
-          <button type="submit" :disabled="busy">
-            {{ busy ? 'Сохранение…' : 'Сохранить' }}
-          </button>
-          <button type="button" :disabled="busy" @click="editing = false">
-            Отменить
-          </button>
-        </div>
-      </form>
-      <p v-else class="episode-actions">
-        <button type="button" :disabled="busy" @click="editing = true">
-          Редактировать
-        </button>
-        <button type="button" :disabled="busy" @click="transition">
-          {{ episode.status === 'active' ? 'Завершить' : 'Повторно открыть' }}
-        </button>
-        <button type="button" class="danger" :disabled="busy" @click="remove">
-          Удалить
-        </button>
-      </p>
+      <UPageCard v-if="editing">
+        <template #header>
+          <h2 class="text-base font-semibold">Редактирование</h2>
+        </template>
+        <form class="flex flex-col gap-4" @submit.prevent="save">
+          <UFormField label="Название">
+            <UInput v-model="form.title" required :maxlength="120" />
+          </UFormField>
+          <p
+            v-if="fieldError('title')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.title }}
+          </p>
+          <UFormField label="Описание">
+            <UTextarea v-model="form.description" :maxlength="5000" :rows="3" />
+          </UFormField>
+          <p
+            v-if="fieldError('description')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.description }}
+          </p>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <UFormField label="Дата начала">
+              <UInput v-model="form.startedAt" type="datetime-local" required />
+            </UFormField>
+            <UFormField label="Дата завершения">
+              <UInput v-model="form.endedAt" type="datetime-local" />
+            </UFormField>
+          </div>
+          <p
+            v-if="fieldError('startedAt') || fieldError('endedAt')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.startedAt || formFields.endedAt }}
+          </p>
+          <UFormField label="Итог">
+            <UTextarea v-model="form.outcome" :maxlength="2000" :rows="3" />
+          </UFormField>
+          <p
+            v-if="fieldError('outcome')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.outcome }}
+          </p>
+          <h3 class="text-sm font-semibold">Симптомы</h3>
+          <p
+            v-if="!form.symptoms.length"
+            class="text-sm text-neutral-600 dark:text-neutral-400"
+          >
+            Симптомы не добавлены.
+          </p>
+          <fieldset
+            v-for="(symptom, index) in form.symptoms"
+            :key="index"
+            class="m-0 flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+          >
+            <UFormField label="Название симптома">
+              <UInput v-model="symptom.name" required :maxlength="200" />
+            </UFormField>
+            <p
+              v-if="fieldError(`symptoms.${index}.name`)"
+              class="text-sm text-red-700 dark:text-red-400"
+            >
+              {{ formFields[`symptoms.${index}.name`] }}
+            </p>
+            <UFormField label="Описание">
+              <UTextarea
+                v-model="symptom.description"
+                :maxlength="2000"
+                :rows="2"
+              />
+            </UFormField>
+            <p
+              v-if="fieldError(`symptoms.${index}.description`)"
+              class="text-sm text-red-700 dark:text-red-400"
+            >
+              {{ formFields[`symptoms.${index}.description`] }}
+            </p>
+            <div>
+              <UButton
+                type="button"
+                color="error"
+                variant="ghost"
+                size="sm"
+                @click="removeSymptom(index)"
+              >
+                Удалить симптом
+              </UButton>
+            </div>
+          </fieldset>
+          <div>
+            <UButton
+              type="button"
+              variant="outline"
+              size="sm"
+              @click="addSymptom"
+            >
+              Добавить симптом
+            </UButton>
+          </div>
+          <UFormField label="Теги (через запятую)">
+            <UInput v-model="form.tags" />
+          </UFormField>
+          <p
+            v-if="fieldError('tags')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.tags }}
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <UButton type="submit" :loading="busy">Сохранить</UButton>
+            <UButton
+              type="button"
+              variant="outline"
+              :disabled="busy"
+              @click="editing = false"
+            >
+              Отменить
+            </UButton>
+          </div>
+        </form>
+      </UPageCard>
 
-      <section class="episode-timeline">
-        <h2>Хронология связанных событий</h2>
-        <p v-if="eventsPending" role="status">Загрузка событий…</p>
-        <p v-else-if="eventsError" role="alert">
+      <UPageCard>
+        <template #header>
+          <h2 class="text-base font-semibold">Хронология связанных событий</h2>
+        </template>
+        <p
+          v-if="eventsPending"
+          role="status"
+          class="text-sm text-neutral-600 dark:text-neutral-400"
+        >
+          Загрузка событий…
+        </p>
+        <p
+          v-else-if="eventsError"
+          role="alert"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
           Не удалось загрузить связанные события.
         </p>
-        <p v-else-if="!eventsData || !eventsData.data.length">
+        <p
+          v-else-if="!eventsData || !eventsData.data.length"
+          class="text-sm text-neutral-600 dark:text-neutral-400"
+        >
           Связанных событий пока нет.
         </p>
         <EventList v-else :events="eventsData.data" :person-id="personId" />
 
-        <form class="note-form" @submit.prevent="addNote">
-          <h3>Добавить заметку</h3>
-          <label>
-            Заголовок
-            <input
+        <form class="mt-6 flex flex-col gap-4" @submit.prevent="addNote">
+          <h3 class="text-base font-semibold">Добавить заметку</h3>
+          <UFormField label="Заголовок">
+            <UInput
               v-model="noteTitle"
               required
-              maxlength="120"
+              :maxlength="120"
               :disabled="noteBusy"
             />
-            <span v-if="noteFieldError('title')" class="field-error">{{
-              noteFields.title
-            }}</span>
-          </label>
-          <label>
-            Текст
-            <textarea
+          </UFormField>
+          <p
+            v-if="noteFieldError('title')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ noteFields.title }}
+          </p>
+          <UFormField label="Текст">
+            <UTextarea
               v-model="noteDescription"
-              maxlength="5000"
+              :maxlength="5000"
+              :rows="3"
               :disabled="noteBusy"
-            ></textarea>
-            <span v-if="noteFieldError('description')" class="field-error">{{
-              noteFields.description
-            }}</span>
-          </label>
-          <label>
-            Дата и время
-            <input
+            />
+          </UFormField>
+          <p
+            v-if="noteFieldError('description')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ noteFields.description }}
+          </p>
+          <UFormField label="Дата и время">
+            <UInput
               v-model="noteOccurredAt"
               type="datetime-local"
               required
               :disabled="noteBusy"
             />
-            <span v-if="noteFieldError('occurredAt')" class="field-error">{{
-              noteFields.occurredAt
-            }}</span>
-          </label>
-          <p v-if="noteError" role="alert">{{ noteError }}</p>
-          <button type="submit" :disabled="noteBusy">
-            {{ noteBusy ? 'Добавление…' : 'Добавить заметку' }}
-          </button>
+          </UFormField>
+          <p
+            v-if="noteFieldError('occurredAt')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ noteFields.occurredAt }}
+          </p>
+          <p
+            v-if="noteError"
+            role="alert"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ noteError }}
+          </p>
+          <div>
+            <UButton type="submit" :loading="noteBusy"
+              >Добавить заметку</UButton
+            >
+          </div>
         </form>
-      </section>
+      </UPageCard>
     </template>
-  </section>
+  </UPage>
 </template>

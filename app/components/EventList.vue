@@ -57,17 +57,32 @@ function formatDateTime(value: string) {
 }
 </script>
 <template>
-  <ul class="event-list">
-    <li v-for="event in props.events" :key="event.id" class="event-item">
-      <p class="event-meta">
-        <span class="event-type">{{ typeNames[event.type] }}</span>
-        · {{ formatDateTime(event.occurredAt) }}
-        <span v-if="event.type !== 'note'" class="event-readonly">
-          · только просмотр
-        </span>
-      </p>
-      <h3 class="event-title">{{ event.title }}</h3>
-      <p v-if="event.description" class="event-description">
+  <ul class="m-0 grid list-none gap-3 p-0">
+    <li
+      v-for="event in props.events"
+      :key="event.id"
+      class="min-w-0 rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
+    >
+      <div
+        class="flex flex-wrap items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400"
+      >
+        <UBadge class="event-type" color="primary" variant="soft">
+          {{ typeNames[event.type] }}
+        </UBadge>
+        <time :datetime="event.occurredAt">
+          {{ formatDateTime(event.occurredAt) }}
+        </time>
+        <span v-if="event.type !== 'note'">только просмотр</span>
+      </div>
+      <h3
+        class="mt-3 break-words text-base font-semibold text-neutral-950 dark:text-white"
+      >
+        {{ event.title }}
+      </h3>
+      <p
+        v-if="event.description"
+        class="mt-2 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-neutral-300"
+      >
         {{ event.description }}
       </p>
       <p
@@ -75,33 +90,41 @@ function formatDateTime(value: string) {
           (event.type === 'episode_start' || event.type === 'episode_end') &&
           event.episodeId
         "
+        class="mt-3"
       >
         <NuxtLink
           :to="`/people/${props.personId}/episodes/${event.episodeId}`"
           :aria-label="`Открыть эпизод: ${event.title}`"
+          class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
           >Открыть эпизод</NuxtLink
         >
       </p>
-      <p v-if="event.type === 'note'" class="event-actions">
+      <div v-if="event.type === 'note'" class="mt-3 flex flex-wrap gap-2">
         <template v-if="props.editable">
-          <button
+          <UButton
             type="button"
+            variant="outline"
+            size="sm"
             :disabled="props.busy"
             @click="emit('edit', event)"
           >
             Редактировать
-          </button>
-          <button
+          </UButton>
+          <UButton
             type="button"
-            class="danger"
+            color="error"
+            variant="soft"
+            size="sm"
             :disabled="props.busy"
             @click="emit('remove', event)"
           >
             Удалить
-          </button>
+          </UButton>
         </template>
-        <span v-else class="event-readonly">только просмотр</span>
-      </p>
+        <span v-else class="text-sm text-neutral-600 dark:text-neutral-400">
+          только просмотр
+        </span>
+      </div>
     </li>
   </ul>
 </template>

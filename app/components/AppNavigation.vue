@@ -19,16 +19,32 @@ async function logout() {
 }
 </script>
 <template>
-  <nav aria-label="Основная навигация">
-    <ul class="navigation-list">
-      <li><NuxtLink to="/">Главная</NuxtLink></li>
-      <li><NuxtLink to="/people">Члены семьи</NuxtLink></li>
-      <li v-if="!isPublic">
-        <button type="button" :disabled="loggingOut" @click="logout">
-          {{ loggingOut ? 'Выход…' : 'Выйти' }}
-        </button>
-      </li>
-    </ul>
-    <p v-if="error" role="alert">{{ error }}</p>
+  <nav
+    aria-label="Основная навигация"
+    class="flex flex-wrap items-center gap-x-4 gap-y-1"
+  >
+    <NuxtLink
+      to="/"
+      class="text-sm font-medium text-neutral-700 no-underline hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
+      >Главная</NuxtLink
+    >
+    <NuxtLink
+      to="/people"
+      class="text-sm font-medium text-neutral-700 no-underline hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
+      >Члены семьи</NuxtLink
+    >
+    <UButton
+      v-if="!isPublic"
+      :disabled="loggingOut"
+      variant="ghost"
+      size="sm"
+      class="text-sm"
+      @click="logout"
+    >
+      {{ loggingOut ? 'Выход…' : 'Выйти' }}
+    </UButton>
+    <p v-if="error" role="alert" class="text-sm text-red-700 dark:text-red-400">
+      {{ error }}
+    </p>
   </nav>
 </template>

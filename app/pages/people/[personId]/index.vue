@@ -116,9 +116,7 @@ async function savePerson() {
     message.value = 'Профиль сохранён.'
     await refreshPerson()
   } catch (cause: unknown) {
-    fields.value =
-      (cause as { data?: { error?: { fields?: Record<string, string> } } }).data
-        ?.error?.fields || {}
+    fields.value = parseApiError(cause).fields
     error.value = 'Проверьте данные профиля.'
   } finally {
     saving.value = false
@@ -152,9 +150,7 @@ async function saveProfile() {
     message.value = 'Медицинский профиль сохранён.'
     await refreshProfile()
   } catch (cause: unknown) {
-    fields.value =
-      (cause as { data?: { error?: { fields?: Record<string, string> } } }).data
-        ?.error?.fields || {}
+    fields.value = parseApiError(cause).fields
     error.value = 'Не удалось сохранить медицинский профиль.'
   } finally {
     saving.value = false
@@ -178,154 +174,304 @@ onBeforeRouteLeave(
 )
 </script>
 <template>
-  <section>
-    <p v-if="personPending" role="status">Загрузка профиля…</p>
-    <p v-else-if="personError" role="alert">Профиль не найден.</p>
-    <template v-else
-      ><h1>{{ person.lastName }} {{ person.firstName }}</h1>
-      <p v-if="message" role="status">{{ message }}</p>
-      <p v-if="error" role="alert">{{ error }}</p>
-      <form @input="personChanged" @submit.prevent="savePerson">
-        <h2>Данные человека</h2>
-        <label
-          >Имя<input v-model="person.firstName" required maxlength="100" /><span
-            v-if="fields.firstName"
-            class="field-error"
-            >{{ fields.firstName }}</span
-          ></label
-        ><label
-          >Фамилия<input
-            v-model="person.lastName"
-            required
-            maxlength="100"
-          /><span v-if="fields.lastName" class="field-error">{{
-            fields.lastName
-          }}</span></label
-        ><label
-          >Отчество<input v-model="person.middleName" maxlength="100" /><span
-            v-if="fields.middleName"
-            class="field-error"
-            >{{ fields.middleName }}</span
-          ></label
-        ><label
-          >Дата рождения<input
-            v-model="person.birthDate"
-            type="date"
-            required
-          /><span v-if="fields.birthDate" class="field-error">{{
-            fields.birthDate
-          }}</span></label
-        ><label
-          >Пол<select v-model="person.sex">
-            <option value="unspecified">Не указан</option>
-            <option value="male">Мужской</option>
-            <option value="female">Женский</option></select
-          ><span v-if="fields.sex" class="field-error">{{
-            fields.sex
-          }}</span></label
-        ><label
-          >Роль в семье<input v-model="person.familyRole" maxlength="50" /><span
-            v-if="fields.familyRole"
-            class="field-error"
-            >{{ fields.familyRole }}</span
-          ></label
-        ><button :disabled="saving">Сохранить данные</button>
-      </form>
-      <button v-if="person.status === 'active'" @click="transition('archive')">
-        Архивировать</button
-      ><button v-else @click="transition('restore')">Восстановить</button>
-      <p>
-        <NuxtLink :to="`/people/${id}/episodes`">Эпизоды</NuxtLink>
-        <NuxtLink :to="`/people/${id}/timeline`">Хронология</NuxtLink>
-      </p>
-      <h2>Медицинский профиль</h2>
-      <p v-if="profilePending" role="status">Загрузка медицинского профиля…</p>
-      <p v-else-if="profileError" role="alert">
-        Не удалось загрузить медицинский профиль.
-      </p>
-      <form v-else @input="profileChanged" @submit.prevent="saveProfile">
-        <label
-          >Группа крови<select v-model="profile.bloodGroup">
-            <option :value="null">Не указана</option>
-            <option value="o">I (O)</option>
-            <option value="a">II (A)</option>
-            <option value="b">III (B)</option>
-            <option value="ab">IV (AB)</option></select
-          ><span v-if="fields.bloodGroup" class="field-error">{{
-            fields.bloodGroup
-          }}</span></label
-        ><label
-          >Резус-фактор<select v-model="profile.rhesusFactor">
-            <option :value="null">Не указан</option>
-            <option value="positive">Положительный</option>
-            <option value="negative">Отрицательный</option></select
-          ><span v-if="fields.rhesusFactor" class="field-error">{{
-            fields.rhesusFactor
-          }}</span></label
-        ><label
-          >Общий комментарий<textarea
-            v-model="profile.generalComment"
-            maxlength="5000"
-          ></textarea
-          ><span v-if="fields.generalComment" class="field-error">{{
-            fields.generalComment
-          }}</span></label
-        ><template
-          v-for="(items, category) in {
-            allergies: profile.allergies,
-            chronicConditions: profile.chronicConditions,
-            warnings: profile.warnings,
-          }"
-          :key="category"
-          ><h3>
-            {{
-              category === 'allergies'
-                ? 'Аллергии'
-                : category === 'chronicConditions'
-                  ? 'Хронические состояния'
-                  : 'Предупреждения'
-            }}
-          </h3>
-          <p v-if="!items.length">Нет записей.</p>
-          <fieldset v-for="(item, index) in items" :key="item.id || index">
-            <label
-              >Название<input
-                v-model="item.name"
-                maxlength="200"
-                required
-              /><span
-                v-if="fields[`${category}.${index}.name`]"
-                class="field-error"
-                >{{ fields[`${category}.${index}.name`] }}</span
-              ></label
-            ><label
-              >Описание<textarea
-                v-model="item.description"
-                maxlength="2000"
-              ></textarea
-              ><span
-                v-if="fields[`${category}.${index}.description`]"
-                class="field-error"
-                >{{ fields[`${category}.${index}.description`] }}</span
-              ></label
-            ><label
-              >Статус<select v-model="item.status">
-                <option value="active">Актуально</option>
-                <option value="archived">В архиве</option></select
-              ><span
-                v-if="fields[`${category}.${index}.status`]"
-                class="field-error"
-                >{{ fields[`${category}.${index}.status`] }}</span
-              ></label
-            ><button type="button" @click="removeItem(category, index)">
-              Удалить из списка
-            </button>
-          </fieldset>
-          <button type="button" @click="addItem(category)">
-            Добавить
-          </button></template
-        ><button :disabled="saving">Сохранить медицинский профиль</button>
-      </form></template
+  <UPage class="gap-6">
+    <p
+      v-if="personPending"
+      role="status"
+      class="text-sm text-neutral-600 dark:text-neutral-400"
     >
-  </section>
+      Загрузка профиля…
+    </p>
+    <p
+      v-else-if="personError"
+      role="alert"
+      class="text-sm text-red-700 dark:text-red-400"
+    >
+      Профиль не найден.
+    </p>
+    <template v-else>
+      <UPageHeader :title="`${person.lastName} ${person.firstName}`">
+        <template #links>
+          <UBadge
+            :color="person.status === 'active' ? 'success' : 'neutral'"
+            variant="soft"
+            :label="person.status === 'active' ? 'Активен' : 'В архиве'"
+          />
+        </template>
+      </UPageHeader>
+      <p
+        v-if="message"
+        role="status"
+        class="text-sm text-emerald-700 dark:text-emerald-400"
+      >
+        {{ message }}
+      </p>
+      <p
+        v-if="error"
+        role="alert"
+        class="text-sm text-red-700 dark:text-red-400"
+      >
+        {{ error }}
+      </p>
+      <UPageCard>
+        <template #header>
+          <h2 class="text-base font-semibold">Данные человека</h2>
+        </template>
+        <form
+          class="flex flex-col gap-4"
+          @input="personChanged"
+          @submit.prevent="savePerson"
+        >
+          <UFormField label="Имя">
+            <UInput v-model="person.firstName" :max-length="100" required />
+          </UFormField>
+          <p
+            v-if="fields.firstName"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ fields.firstName }}
+          </p>
+          <UFormField label="Фамилия">
+            <UInput v-model="person.lastName" :max-length="100" required />
+          </UFormField>
+          <p
+            v-if="fields.lastName"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ fields.lastName }}
+          </p>
+          <UFormField label="Отчество">
+            <UInput
+              :model-value="person.middleName || ''"
+              :max-length="100"
+              @update:model-value="person.middleName = String($event || '')"
+            />
+          </UFormField>
+          <p
+            v-if="fields.middleName"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ fields.middleName }}
+          </p>
+          <UFormField label="Дата рождения">
+            <UInput v-model="person.birthDate" type="date" required />
+          </UFormField>
+          <p
+            v-if="fields.birthDate"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ fields.birthDate }}
+          </p>
+          <UFormField label="Пол">
+            <select v-model="person.sex" class="native-select" aria-label="Пол">
+              <option value="unspecified">Не указан</option>
+              <option value="male">Мужской</option>
+              <option value="female">Женский</option>
+            </select>
+          </UFormField>
+          <p v-if="fields.sex" class="text-sm text-red-700 dark:text-red-400">
+            {{ fields.sex }}
+          </p>
+          <UFormField label="Роль в семье">
+            <UInput
+              :model-value="person.familyRole || ''"
+              :max-length="50"
+              @update:model-value="person.familyRole = String($event || '')"
+            />
+          </UFormField>
+          <p
+            v-if="fields.familyRole"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ fields.familyRole }}
+          </p>
+          <UButton type="submit" :loading="saving">Сохранить данные</UButton>
+        </form>
+      </UPageCard>
+      <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          v-if="person.status === 'active'"
+          variant="outline"
+          @click="transition('archive')"
+        >
+          Архивировать
+        </UButton>
+        <UButton v-else variant="outline" @click="transition('restore')">
+          Восстановить
+        </UButton>
+        <NuxtLink
+          :to="`/people/${id}/episodes`"
+          class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
+          >Эпизоды</NuxtLink
+        >
+        <NuxtLink
+          :to="`/people/${id}/timeline`"
+          class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
+          >Хронология</NuxtLink
+        >
+      </div>
+      <UPageCard class="mt-4">
+        <template #header>
+          <h2 class="text-base font-semibold">Медицинский профиль</h2>
+        </template>
+        <p
+          v-if="profilePending"
+          role="status"
+          class="text-sm text-neutral-600 dark:text-neutral-400"
+        >
+          Загрузка медицинского профиля…
+        </p>
+        <p
+          v-else-if="profileError"
+          role="alert"
+          class="text-sm text-red-700 dark:text-red-400"
+        >
+          Не удалось загрузить медицинский профиль.
+        </p>
+        <form
+          v-else
+          class="flex flex-col gap-4"
+          @input="profileChanged"
+          @submit.prevent="saveProfile"
+        >
+          <div class="grid gap-4 sm:grid-cols-2">
+            <UFormField label="Группа крови">
+              <select
+                v-model="profile.bloodGroup"
+                class="native-select"
+                aria-label="Группа крови"
+              >
+                <option :value="null">Не указана</option>
+                <option value="o">I (O)</option>
+                <option value="a">II (A)</option>
+                <option value="b">III (B)</option>
+                <option value="ab">IV (AB)</option>
+              </select>
+            </UFormField>
+            <UFormField label="Резус-фактор">
+              <select
+                v-model="profile.rhesusFactor"
+                class="native-select"
+                aria-label="Резус-фактор"
+              >
+                <option :value="null">Не указан</option>
+                <option value="positive">Положительный</option>
+                <option value="negative">Отрицательный</option>
+              </select>
+            </UFormField>
+          </div>
+          <p
+            v-if="fields.bloodGroup || fields.rhesusFactor"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            <span v-if="fields.bloodGroup">{{ fields.bloodGroup }}</span>
+            <span v-if="fields.rhesusFactor"> {{ fields.rhesusFactor }}</span>
+          </p>
+          <UFormField label="Общий комментарий">
+            <UTextarea
+              :model-value="profile.generalComment || ''"
+              :max-length="5000"
+              :rows="3"
+              @update:model-value="
+                profile.generalComment = String($event || '')
+              "
+            />
+          </UFormField>
+          <p
+            v-if="fields.generalComment"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ fields.generalComment }}
+          </p>
+          <template
+            v-for="(items, category) in {
+              allergies: profile.allergies,
+              chronicConditions: profile.chronicConditions,
+              warnings: profile.warnings,
+            }"
+            :key="category"
+          >
+            <h3 class="text-sm font-semibold">
+              {{
+                category === 'allergies'
+                  ? 'Аллергии'
+                  : category === 'chronicConditions'
+                    ? 'Хронические состояния'
+                    : 'Предупреждения'
+              }}
+            </h3>
+            <p
+              v-if="!items.length"
+              class="text-sm text-neutral-600 dark:text-neutral-400"
+            >
+              Нет записей.
+            </p>
+            <fieldset
+              v-for="(item, index) in items"
+              :key="item.id || index"
+              class="m-0 flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+            >
+              <UFormField label="Название">
+                <UInput v-model="item.name" :max-length="200" required />
+              </UFormField>
+              <p
+                v-if="fields[`${category}.${index}.name`]"
+                class="text-sm text-red-700 dark:text-red-400"
+              >
+                {{ fields[`${category}.${index}.name`] }}
+              </p>
+              <UFormField label="Описание">
+                <UTextarea
+                  :model-value="item.description || ''"
+                  :max-length="2000"
+                  :rows="2"
+                  @update:model-value="item.description = String($event || '')"
+                />
+              </UFormField>
+              <p
+                v-if="fields[`${category}.${index}.description`]"
+                class="text-sm text-red-700 dark:text-red-400"
+              >
+                {{ fields[`${category}.${index}.description`] }}
+              </p>
+              <UFormField label="Статус">
+                <select
+                  v-model="item.status"
+                  class="native-select"
+                  :aria-label="`Статус записи ${index + 1}`"
+                >
+                  <option value="active">Актуально</option>
+                  <option value="archived">В архиве</option>
+                </select>
+              </UFormField>
+              <p
+                v-if="fields[`${category}.${index}.status`]"
+                class="text-sm text-red-700 dark:text-red-400"
+              >
+                {{ fields[`${category}.${index}.status`] }}
+              </p>
+              <div>
+                <UButton
+                  variant="ghost"
+                  color="error"
+                  size="sm"
+                  @click="removeItem(category, index)"
+                >
+                  Удалить из списка
+                </UButton>
+              </div>
+            </fieldset>
+            <div>
+              <UButton variant="outline" size="sm" @click="addItem(category)">
+                Добавить
+              </UButton>
+            </div>
+          </template>
+          <UButton type="submit" :loading="saving"
+            >Сохранить медицинский профиль</UButton
+          >
+        </form>
+      </UPageCard>
+    </template>
+  </UPage>
 </template>

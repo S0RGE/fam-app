@@ -149,12 +149,9 @@ async function save() {
     dirty.value = false
     await refresh()
   } catch (cause: unknown) {
-    const err = cause as {
-      statusCode?: number
-      data?: { error?: { code?: string; fields?: Record<string, string> } }
-    }
-    formFields.value = err.data?.error?.fields || {}
-    if (err.statusCode === 409 && err.data?.error?.code === 'NOT_EDITABLE') {
+    const apiError = parseApiError(cause)
+    formFields.value = apiError.fields
+    if (apiError.statusCode === 409 && apiError.code === 'NOT_EDITABLE') {
       formError.value = 'Запись не поддерживает редактирование.'
     } else {
       formError.value = 'Не удалось сохранить заметку. Проверьте поля.'
@@ -186,55 +183,99 @@ onBeforeRouteLeave(
 )
 </script>
 <template>
-  <section>
-    <h1>Медицинская хронология</h1>
-    <p><NuxtLink :to="`/people/${id}`">Назад к профилю</NuxtLink></p>
+  <UPage class="gap-6">
+    <UPageHeader :title="'Медицинская хронология'">
+      <template #description>
+        <NuxtLink
+          :to="`/people/${id}`"
+          class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
+          >Назад к профилю</NuxtLink
+        >
+      </template>
+    </UPageHeader>
 
-    <form class="event-filters" @submit.prevent="applyFilter">
-      <label>
-        Тип
-        <select v-model="typeFilter" @change="applyFilter">
-          <option value="">Все</option>
-          <option
-            v-for="[value, label] in typeOptions"
-            :key="value"
-            :value="value"
+    <UPageCard>
+      <template #header>
+        <h2 class="text-base font-semibold">Фильтры</h2>
+      </template>
+      <form class="grid gap-4 md:grid-cols-2" @submit.prevent="applyFilter">
+        <UFormField label="Тип">
+          <select
+            v-model="typeFilter"
+            class="native-select"
+            aria-label="Тип"
+            @change="applyFilter"
           >
-            {{ label }}
-          </option>
-        </select>
-      </label>
-      <label>
-        С даты
-        <input
-          v-model="fromFilter"
-          type="datetime-local"
-          @change="applyFilter"
-        />
-      </label>
-      <label>
-        По дату
-        <input v-model="toFilter" type="datetime-local" @change="applyFilter" />
-      </label>
-      <label>
-        Эпизод
-        <select v-model="episodeFilter" @change="applyFilter">
-          <option value="">Все</option>
-          <option
-            v-for="episode in episodesData?.data || []"
-            :key="episode.id"
-            :value="episode.id"
+            <option value="">Все</option>
+            <option
+              v-for="[value, label] in typeOptions"
+              :key="value"
+              :value="value"
+            >
+              {{ label }}
+            </option>
+          </select>
+        </UFormField>
+        <UFormField label="Эпизод">
+          <select
+            v-model="episodeFilter"
+            class="native-select"
+            aria-label="Эпизод"
+            @change="applyFilter"
           >
-            {{ episode.title }}
-          </option>
-        </select>
-      </label>
-      <button type="submit" :disabled="pending">Применить</button>
-    </form>
+            <option value="">Все</option>
+            <option
+              v-for="episode in episodesData?.data || []"
+              :key="episode.id"
+              :value="episode.id"
+            >
+              {{ episode.title }}
+            </option>
+          </select>
+        </UFormField>
+        <UFormField label="С даты">
+          <UInput
+            v-model="fromFilter"
+            type="datetime-local"
+            aria-label="С даты"
+            @change="applyFilter"
+          />
+        </UFormField>
+        <UFormField label="По дату">
+          <UInput
+            v-model="toFilter"
+            type="datetime-local"
+            aria-label="По дату"
+            @change="applyFilter"
+          />
+        </UFormField>
+        <div class="md:col-span-2">
+          <UButton type="submit" :loading="pending">Применить</UButton>
+        </div>
+      </form>
+    </UPageCard>
 
-    <p v-if="pending" role="status">Загрузка событий…</p>
-    <p v-else-if="error" role="alert">Не удалось загрузить события.</p>
-    <p v-else-if="!data || !data.data.length">Событий пока нет.</p>
+    <p
+      v-if="pending"
+      role="status"
+      aria-label="Загрузка событий…"
+      class="text-sm text-neutral-600 dark:text-neutral-400"
+    >
+      Загрузка событий…
+    </p>
+    <p
+      v-else-if="error"
+      role="alert"
+      class="text-sm text-red-700 dark:text-red-400"
+    >
+      Не удалось загрузить события.
+    </p>
+    <p
+      v-else-if="!data || !data.data.length"
+      class="text-sm text-neutral-600 dark:text-neutral-400"
+    >
+      Событий пока нет.
+    </p>
     <template v-else>
       <EventList
         :events="data.data"
@@ -244,74 +285,103 @@ onBeforeRouteLeave(
         @edit="startEdit"
         @remove="remove"
       />
-      <p>Всего: {{ data.meta.total }}</p>
-      <p v-if="data.meta.total > 0" class="event-pager">
-        <button
-          type="button"
-          :disabled="offset === 0 || pending"
-          @click="step(false)"
-        >
-          Назад
-        </button>
-        <button
-          type="button"
-          :disabled="offset + limit >= data.meta.total || pending"
-          @click="step(true)"
-        >
-          Дальше
-        </button>
-      </p>
-
-      <p v-if="formError" role="alert">{{ formError }}</p>
-      <form v-if="editing" class="event-form" @submit.prevent="save">
-        <h2>Редактирование заметки</h2>
-        <label>
-          Заголовок
-          <input
-            v-model="form.title"
-            required
-            maxlength="120"
-            :disabled="busy"
-            @input="onFormInput"
-          />
-          <span v-if="fieldError('title')" class="field-error">{{
-            formFields.title
-          }}</span>
-        </label>
-        <label>
-          Текст
-          <textarea
-            v-model="form.description"
-            maxlength="5000"
-            :disabled="busy"
-            @input="onFormInput"
-          ></textarea>
-          <span v-if="fieldError('description')" class="field-error">{{
-            formFields.description
-          }}</span>
-        </label>
-        <label>
-          Дата и время
-          <input
-            v-model="form.occurredAt"
-            type="datetime-local"
-            required
-            :disabled="busy"
-            @input="onFormInput"
-          />
-          <span v-if="fieldError('occurredAt')" class="field-error">{{
-            formFields.occurredAt
-          }}</span>
-        </label>
-        <div class="event-form-actions">
-          <button type="submit" :disabled="busy">
-            {{ busy ? 'Сохранение…' : 'Сохранить' }}
-          </button>
-          <button type="button" :disabled="busy" @click="cancelEdit">
-            Отменить
-          </button>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="text-sm font-medium">Всего: {{ data.meta.total }}</p>
+        <div v-if="data.meta.total > 0" class="flex gap-2">
+          <UButton
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="offset === 0 || pending"
+            @click="step(false)"
+          >
+            Назад
+          </UButton>
+          <UButton
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="offset + limit >= data.meta.total || pending"
+            @click="step(true)"
+          >
+            Дальше
+          </UButton>
         </div>
-      </form>
+      </div>
+
+      <p
+        v-if="formError"
+        role="alert"
+        class="text-sm text-red-700 dark:text-red-400"
+      >
+        {{ formError }}
+      </p>
+      <UPageCard v-if="editing">
+        <template #header>
+          <h2 class="text-base font-semibold">Редактирование заметки</h2>
+        </template>
+        <form class="flex flex-col gap-4" @submit.prevent="save">
+          <UFormField label="Заголовок">
+            <UInput
+              v-model="form.title"
+              aria-label="Заголовок"
+              required
+              :maxlength="120"
+              :disabled="busy"
+              @input="onFormInput"
+            />
+          </UFormField>
+          <p
+            v-if="fieldError('title')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.title }}
+          </p>
+          <UFormField label="Текст">
+            <UTextarea
+              v-model="form.description"
+              aria-label="Текст"
+              :maxlength="5000"
+              :rows="4"
+              :disabled="busy"
+              @input="onFormInput"
+            />
+          </UFormField>
+          <p
+            v-if="fieldError('description')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.description }}
+          </p>
+          <UFormField label="Дата и время">
+            <UInput
+              v-model="form.occurredAt"
+              aria-label="Дата и время"
+              type="datetime-local"
+              required
+              :disabled="busy"
+              @input="onFormInput"
+            />
+          </UFormField>
+          <p
+            v-if="fieldError('occurredAt')"
+            class="text-sm text-red-700 dark:text-red-400"
+          >
+            {{ formFields.occurredAt }}
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <UButton type="submit" :loading="busy">Сохранить</UButton>
+            <UButton
+              type="button"
+              variant="outline"
+              :disabled="busy"
+              @click="cancelEdit"
+            >
+              Отменить
+            </UButton>
+          </div>
+        </form>
+      </UPageCard>
     </template>
-  </section>
+  </UPage>
 </template>
