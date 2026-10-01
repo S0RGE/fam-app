@@ -31,6 +31,18 @@ const events: any[] = [
     updatedAt: '2026-02-02T10:30:00.000Z',
   },
 ]
+const measurementEvent = {
+  id: '66666666-6666-4666-8666-666666666666',
+  type: 'measurement',
+  occurredAt: '2026-02-03T06:15:00.000Z',
+  title: 'Артериальное давление',
+  description: '120/80 мм рт. ст. — Утром',
+  source: 'manual',
+  authorId: '55555555-5555-4555-8555-555555555555',
+  episodeId,
+  createdAt: '2026-02-03T06:15:00.000Z',
+  updatedAt: '2026-02-03T06:15:00.000Z',
+}
 
 /**
  * Один catch-all перехват (паттерн tests/e2e/navigation.spec.ts):
@@ -213,6 +225,20 @@ test('timeline list renders Russian types, times and episode link', async ({
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true)
+})
+
+test('timeline renders measurement values and units from the linked event', async ({
+  page,
+}) => {
+  interceptApi(page, { events: [measurementEvent] })
+  await login(page)
+  await page.goto(`/people/${personId}/timeline`)
+  await refreshTimeline(page)
+  await expect(
+    page.locator('.event-type', { hasText: 'Измерение' }),
+  ).toBeVisible()
+  await expect(page.getByText('Артериальное давление')).toBeVisible()
+  await expect(page.getByText('120/80 мм рт. ст. — Утром')).toBeVisible()
 })
 
 test('timeline confirms note deletion and shows empty state', async ({

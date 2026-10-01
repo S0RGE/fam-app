@@ -305,6 +305,11 @@ onBeforeRouteLeave(
           >Эпизоды</NuxtLink
         >
         <NuxtLink
+          :to="`/people/${id}/measurements`"
+          class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
+          >Измерения</NuxtLink
+        >
+        <NuxtLink
           :to="`/people/${id}/timeline`"
           class="text-sm font-medium text-primary-600 no-underline hover:text-primary-700 dark:text-primary-400"
           >Хронология</NuxtLink

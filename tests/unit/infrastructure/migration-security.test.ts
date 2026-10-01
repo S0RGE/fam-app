@@ -22,6 +22,8 @@ const tables = [
   'tags',
   'episode_tags',
   'medical_events',
+  'measurement_types',
+  'measurements',
 ]
 
 describe('auth/family migration security contract', () => {
@@ -61,6 +63,12 @@ describe('auth/family migration security contract', () => {
     )
     expect(migration).toContain(
       'fa.family_id=medical_events.family_id and fa.account_id=auth.uid()',
+    )
+    expect(migration).toContain(
+      'fa.family_id=measurement_types.family_id and fa.account_id=auth.uid()',
+    )
+    expect(migration).toContain(
+      'fa.family_id=measurements.family_id and fa.account_id=auth.uid()',
     )
   })
 
@@ -107,6 +115,30 @@ describe('auth/family migration security contract', () => {
     expect(migration).toContain(
       'grant execute on function public.complete_episode(uuid,uuid,uuid,timestamptz,text,uuid) to authenticated',
     )
+    expect(migration).toMatch(
+      /public\.create_measurement\([\s\S]*security definer set search_path=''/,
+    )
+    expect(migration).toMatch(
+      /public\.update_measurement\([\s\S]*security definer set search_path=''/,
+    )
+    expect(migration).toMatch(
+      /public\.delete_measurement\([\s\S]*security definer set search_path=''/,
+    )
+    expect(migration).toContain(
+      'create role app_measurement_writer nologin noinherit nobypassrls',
+    )
+    for (const signature of [
+      'create_measurement(uuid,uuid,jsonb)',
+      'update_measurement(uuid,uuid,uuid,jsonb)',
+      'delete_measurement(uuid,uuid,uuid)',
+    ]) {
+      expect(migration).toContain(
+        `revoke execute on function public.${signature} from public`,
+      )
+      expect(migration).toContain(
+        `grant execute on function public.${signature} to authenticated`,
+      )
+    }
   })
 })
 
@@ -190,5 +222,119 @@ describe('medical_events migration contract', () => {
       'insert into public.episode_tags(episode_id, tag_id, family_id)',
     )
     expect(body).toContain('t.family_id=p_family_id and t.name = any(v_names)')
+  })
+})
+
+// M003: types and measurements (spec §§10–11).
+describe('measurement migration contract', () => {
+  it('keeps type and measurement ownership inside one family/person', () => {
+    expect(migration).toContain(
+      'foreign key (measurement_type_id, family_id) references public.measurement_types(id, family_id) on delete restrict',
+    )
+    expect(migration).toContain(
+      'foreign key (episode_id, family_id, person_id) references public.episodes(id, family_id, person_id) on delete set null (episode_id)',
+    )
+    expect(migration).toContain(
+      'foreign key (person_id, family_id) references public.people(id, family_id) on delete cascade',
+    )
+  })
+
+  it('constrains type fields, active duplicates and allowed units', () => {
+    expect(migration).toContain(
+      "value_type text not null check (value_type in ('number', 'text', 'boolean', 'compound', 'image'))",
+    )
+    expect(migration).toContain(
+      "status text not null default 'active' check (status in ('active', 'archived'))",
+    )
+    expect(migration).toContain(
+      'check (public.measurement_units_valid(allowed_units))',
+    )
+    expect(migration).toContain(
+      "create unique index measurement_types_active_name_unit_uidx on public.measurement_types(family_id, lower(btrim(name)), coalesce(unit, '')) where status='active'",
+    )
+    expect(migration).toContain(
+      'create policy measurement_types_read on public.measurement_types for select',
+    )
+    expect(migration).toContain(
+      'create policy measurement_types_update on public.measurement_types for update',
+    )
+    expect(migration).toContain('not measurement_types.is_preset')
+    expect(migration).not.toContain('create policy measurement_types_delete')
+  })
+
+  it('stores exactly one bounded value and UTC instants', () => {
+    expect(migration).toContain(
+      'num_nonnulls(numeric_value, text_value, boolean_value, compound_value) = 1',
+    )
+    expect(migration).toContain('occurred_at timestamptz not null')
+    expect(migration).toContain(
+      'comment text check (comment is null or char_length(comment) <= 1000)',
+    )
+    expect(migration).toContain(
+      'text_value text check (text_value is null or char_length(text_value) between 1 and 2000)',
+    )
+  })
+
+  it('allows measurement writes only through RLS-bound atomic RPCs', () => {
+    expect(migration).toContain(
+      'revoke insert, update, delete on public.measurements from anon, authenticated',
+    )
+    expect(migration).toContain(
+      'alter function public.create_measurement(uuid,uuid,jsonb) owner to app_measurement_writer',
+    )
+    expect(migration).toContain(
+      'where fa.family_id=p_family_id and fa.account_id=auth.uid()',
+    )
+    expect(migration).toContain(
+      'v_occurred_at, left(v_type.name, 120), v_description, v_source, auth.uid()',
+    )
+    expect(migration).not.toContain(
+      'p_author_id uuid\n) returns public.measurements',
+    )
+    expect(migration).toContain("current_user <> 'app_measurement_writer'")
+  })
+
+  it('keeps existing values compatible when a type is already in use', () => {
+    expect(migration).toContain(
+      'create trigger protect_used_measurement_type_value_type',
+    )
+    expect(migration).toContain(
+      "raise exception 'measurement type is in use' using errcode='P1001'",
+    )
+  })
+
+  it('links one measurement event through subject_id', () => {
+    expect(migration).toContain(
+      'alter table public.medical_events add column subject_id uuid',
+    )
+    expect(migration).toContain(
+      'create unique index medical_events_subject_uidx on public.medical_events(family_id, type, subject_id) where subject_id is not null',
+    )
+    expect(migration).toMatch(
+      /public\.create_measurement\([\s\S]*insert into public\.measurements[\s\S]*insert into public\.medical_events/,
+    )
+    expect(migration).toMatch(
+      /public\.update_measurement\([\s\S]*update public\.measurements[\s\S]*update public\.medical_events/,
+    )
+    expect(migration).toMatch(
+      /public\.delete_measurement\([\s\S]*delete from public\.medical_events[\s\S]*delete from public\.measurements/,
+    )
+  })
+
+  it('seeds all six canonical presets for existing and new families', () => {
+    for (const name of [
+      'Температура',
+      'Вес',
+      'Рост',
+      'Артериальное давление',
+      'Пульс',
+      'Сатурация',
+    ]) {
+      expect(migration).toContain(`'${name}'`)
+    }
+    expect(migration).toContain("'Предустановленные показатели'")
+    expect(migration).toMatch(
+      /create or replace function public\.setup_family\([\s\S]*insert into public\.measurement_types/,
+    )
   })
 })
