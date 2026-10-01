@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+
+/*
+ * Семейная медицинская информация: спокойная clinical-палитра.
+ * Токены Nuxt UI 4 (light/dark пары) — переопределяются в @theme.
+ */
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --color-blue-50: oklch(0.97 0.012 240);
+  --color-blue-100: oklch(0.93 0.03 240);
+  --color-blue-200: oklch(0.88 0.06 240);
+  --color-blue-300: oklch(0.8 0.09 240);
+  --color-blue-400: oklch(0.68 0.12 240);
+  --color-blue-500: oklch(0.55 0.15 240);
+  --color-blue-600: oklch(0.45 0.14 240);
+  --color-blue-700: oklch(0.38 0.12 240);
+  --color-blue-800: oklch(0.32 0.1 240);
+  --color-blue-900: oklch(0.27 0.08 240);
+  --color-blue-950: oklch(0.22 0.06 240);
+  --color-neutral-50: oklch(0.98 0 0);
+  --color-neutral-100: oklch(0.95 0 0);
+  --color-neutral-200: oklch(0.88 0 0);
+  --color-neutral-300: oklch(0.78 0 0);
+  --color-neutral-400: oklch(0.62 0 0);
+  --color-neutral-500: oklch(0.5 0 0);
+  --color-neutral-600: oklch(0.4 0 0);
+  --color-neutral-700: oklch(0.32 0 0);
+  --color-neutral-800: oklch(0.26 0 0);
+  --color-neutral-900: oklch(0.2 0 0);
+  --color-neutral-950: oklch(0.14 0 0);
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+body {
+  min-width: 320px;
+}
+
+/*
+ * Нативные select-контролы (фильтры хронологии/эпизодов):
+ * сохраняем role=option в e2e-селекторах, поэтому не заменяем на USelect.
+ * Приводим внешний вид к метрикам UInput.
+ */
+.native-select {
+  @apply w-full max-w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus-visible:outline-3 focus-visible:outline-primary-500 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100;
+}
